@@ -16,6 +16,7 @@ YT Downloader Plus turns your machine into a powerful media server, allowing you
 *   **📐 Quality Control** — Pick your perfect resolution: 4K, 1440p, 1080p, 720p, or just "Best".
 *   **🎵 Audio extraction** — Convert videos to high-quality 320kbps MP3s with one click.
 *   **🌐 Network-Wide Access** — Run it on your PC, access it from your Phone, Tablet, or TV.
+*   **� Zero-Config (FFmpeg Included)** — No need to mess with system PATHs. One command sets up everything!
 *   **📊 Live Progress** — Watch your downloads happen with real-time speed, ETA, and logs.
 *   **🔀 Resumable** — Interrupted? No problem. yt-dlp picks up right where it left off.
 
@@ -23,19 +24,21 @@ YT Downloader Plus turns your machine into a powerful media server, allowing you
 
 ## 🛠️ Quick Start
 
-### 1. Prerequisites
-Make sure you have [FFmpeg](https://ffmpeg.org/download.html) installed on your system. It's the magic engine that merges videos and extracts audio!
+### ⚡ Portable Setup (The Easy Way)
+We've made it super simple to include all dependencies (including FFmpeg) directly in the folder:
 
-### 2. Setup & Run
 ```bash
-# Clone the magic
+# 1. Clone the magic
 git clone https://github.com/ezzmike/YTD-Plus.git
 cd YTD-Plus
 
-# Install dependencies
+# 2. Install Python deps
 pip install -r requirements.txt
 
-# Launch the server
+# 3. Auto-include FFmpeg (One-time setup)
+python setup_dependencies.py
+
+# 4. Launch the server
 python app.py
 ```
 

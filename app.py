@@ -77,6 +77,10 @@ def progress_hook(d):
 def get_ydl_opts(folder, mode, resolution):
     """Build yt-dlp options based on user settings"""
     
+    # Path to local FFmpeg binaries if they exist
+    bin_path = os.path.join(os.getcwd(), 'bin')
+    ffmpeg_path = bin_path if os.path.exists(os.path.join(bin_path, 'ffmpeg.exe')) or os.path.exists(os.path.join(bin_path, 'ffmpeg')) else None
+
     opts = {
         'outtmpl': os.path.join(folder, '%(title)s [%(id)s].%(ext)s'),
         'paths': {'home': folder},
@@ -88,6 +92,9 @@ def get_ydl_opts(folder, mode, resolution):
         'fragment_retries': 10,
         'ignoreerrors': False,
     }
+
+    if ffmpeg_path:
+        opts['ffmpeg_location'] = ffmpeg_path
     
     if mode == "Audio":
         # Audio-only mode: extract best audio as MP3
@@ -210,7 +217,10 @@ def index():
 @app.route('/api/download', methods=['POST'])
 def start_download():
     """API endpoint to start a download"""
-    data = request.json
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
     
     url = data.get('url', '').strip()
     mode = data.get('mode', 'Video')
