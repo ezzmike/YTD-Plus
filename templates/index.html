@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Downloader Plus</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 YT Downloader Plus</h1>
+            <p class="subtitle">Download YouTube videos and playlists with ease</p>
+        </header>
+
+        <main>
+            <div class="card">
+                <form id="downloadForm">
+                    <!-- URL Input -->
+                    <div class="form-group">
+                        <label for="url">YouTube URL (video or playlist):</label>
+                        <input 
+                            type="text" 
+                            id="url" 
+                            name="url" 
+                            placeholder="https://www.youtube.com/watch?v=..." 
+                            required
+                            autocomplete="off">
+                    </div>
+
+                    <!-- Mode Selection -->
+                    <div class="form-group">
+                        <label>Download Mode:</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="mode" value="Video" checked>
+                                <span>Video</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="mode" value="Audio">
+                                <span>Audio Only (MP3)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Resolution Selection -->
+                    <div class="form-group" id="resolutionGroup">
+                        <label for="resolution">Max Resolution:</label>
+                        <select id="resolution" name="resolution">
+                            {% for option in quality_options %}
+                            <option value="{{ option }}" {% if option == default_quality %}selected{% endif %}>
+                                {{ option }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Output Folder -->
+                    <div class="form-group">
+                        <label for="folder">Save to Folder:</label>
+                        <input 
+                            type="text" 
+                            id="folder" 
+                            name="folder" 
+                            value="{{ default_folder }}"
+                            placeholder="Enter folder path...">
+                        <small>Default: {{ default_folder }}</small>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="button-group">
+                        <button type="submit" id="downloadBtn" class="btn btn-primary">
+                            Start Download
+                        </button>
+                        <button type="button" id="cancelBtn" class="btn btn-danger" disabled>
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Progress Section -->
+            <div class="card" id="progressCard" style="display: none;">
+                <h3>Download Progress</h3>
+                
+                <div class="progress-info">
+                    <div class="info-row">
+                        <span class="label">Status:</span>
+                        <span id="status" class="value">Idle</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Progress:</span>
+                        <span id="progressText" class="value">0%</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Speed:</span>
+                        <span id="speed" class="value">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">ETA:</span>
+                        <span id="eta" class="value">-</span>
+                    </div>
+                </div>
+
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div id="currentTitle" class="current-title" style="display: none;">
+                    <strong>Current:</strong> <span id="titleText"></span>
+                </div>
+            </div>
+
+            <!-- Logs Section -->
+            <div class="card">
+                <h3>Activity Log</h3>
+                <div id="logs" class="logs">
+                    <div class="log-entry">Ready to download...</div>
+                </div>
+                <button id="clearLogsBtn" class="btn btn-secondary btn-small">Clear Logs</button>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by <a href="https://github.com/yt-dlp/yt-dlp" target="_blank">yt-dlp</a> | 
+               <a href="https://github.com" target="_blank">View on GitHub</a></p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
