@@ -19,13 +19,25 @@
                     <!-- URL Input -->
                     <div class="form-group">
                         <label for="url">YouTube URL (video or playlist):</label>
-                        <input 
-                            type="text" 
-                            id="url" 
-                            name="url" 
-                            placeholder="https://www.youtube.com/watch?v=..." 
-                            required
-                            autocomplete="off">
+                        <div class="url-input-wrapper">
+                            <input 
+                                type="text" 
+                                id="url" 
+                                name="url" 
+                                placeholder="https://www.youtube.com/watch?v=..." 
+                                required
+                                autocomplete="off">
+                            <button type="button" id="previewBtn" class="btn btn-secondary btn-icon">🔍</button>
+                        </div>
+                    </div>
+
+                    <!-- Video Preview Area -->
+                    <div id="videoPreview" class="video-preview" style="display: none;">
+                        <img id="previewThumb" src="" alt="Thumbnail">
+                        <div class="preview-info">
+                            <h4 id="previewTitle">Video Title</h4>
+                            <p id="previewMeta">Duration: --</p>
+                        </div>
                     </div>
 
                     <!-- Mode Selection -->
@@ -53,6 +65,21 @@
                             </option>
                             {% endfor %}
                         </select>
+                    </div>
+
+                    <!-- Additional Options -->
+                    <div class="form-group">
+                        <label>Additional Options:</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="subtitles" name="subtitles">
+                                <span>Download/Embed Subtitles</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="embed_thumbnail" name="embed_thumbnail" checked>
+                                <span>Embed Original Thumbnail</span>
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Output Folder -->

@@ -35,9 +35,9 @@ def setup_ffmpeg():
         
         print("📦 Extracting binaries...")
         with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
-            # Find the bin folder inside the zip
+            # Find ffmpeg.exe and ffprobe.exe anywhere in the zip
             for member in zip_ref.namelist():
-                if member.endswith('bin/ffmpeg.exe') or member.endswith('bin/ffprobe.exe'):
+                if member.lower().endswith('ffmpeg.exe') or member.lower().endswith('ffprobe.exe'):
                     filename = os.path.basename(member)
                     source = zip_ref.open(member)
                     target = open(os.path.join(bin_dir, filename), "wb")

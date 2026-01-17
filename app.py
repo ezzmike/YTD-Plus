@@ -9,10 +9,14 @@ import threading
 import queue
 import time
 import socket
+import re
 from config import Config
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Regex to strip ANSI escape codes
+ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 # Global state for managing downloads
 download_queue = queue.Queue()
@@ -29,11 +33,19 @@ download_status = {
 status_lock = threading.Lock()
 
 
+def strip_ansi(text):
+    """Remove ANSI escape sequences from text"""
+    if not isinstance(text, str):
+        return text
+    return ANSI_ESCAPE.sub('', text)
+
+
 def add_log(message):
     """Add a message to the download logs"""
     with status_lock:
         timestamp = time.strftime('%H:%M:%S')
-        download_status['logs'].append(f"[{timestamp}] {message}")
+        clean_msg = strip_ansi(message)
+        download_status['logs'].append(f"[{timestamp}] {clean_msg}")
         # Keep only last 100 log entries
         if len(download_status['logs']) > 100:
             download_status['logs'] = download_status['logs'][-100:]
@@ -43,16 +55,18 @@ def progress_hook(d):
     """Callback for yt-dlp progress updates"""
     with status_lock:
         if d['status'] == 'downloading':
-            # Extract progress information
-            percent_str = d.get('_percent_str', '0%').strip()
-            speed_str = d.get('_speed_str', 'N/A').strip()
-            eta_str = d.get('_eta_str', 'N/A').strip()
+            # Extract progress information and strip ANSI
+            percent_str = strip_ansi(d.get('_percent_str', '0%')).strip()
+            speed_str = strip_ansi(d.get('_speed_str', 'N/A')).strip()
+            eta_str = strip_ansi(d.get('_eta_str', 'N/A')).strip()
             
-            # Parse percentage
+            # Parse percentage efficiently
             try:
-                percent = float(percent_str.replace('%', ''))
+                # Remove % and any non-numeric characters except dot
+                clean_percent = re.sub(r'[^\d.]', '', percent_str)
+                percent = float(clean_percent)
             except:
-                percent = 0
+                percent = download_status['progress']
             
             download_status['progress'] = percent
             download_status['status'] = 'downloading'
@@ -74,15 +88,29 @@ def progress_hook(d):
             add_log(f"Error: {error_msg}")
 
 
-def get_ydl_opts(folder, mode, resolution):
+def get_ydl_opts(folder, mode, resolution, subtitles=False, embed_thumbnail=False):
     """Build yt-dlp options based on user settings"""
     
     # Path to local FFmpeg binaries if they exist
     bin_path = os.path.join(os.getcwd(), 'bin')
-    ffmpeg_path = bin_path if os.path.exists(os.path.join(bin_path, 'ffmpeg.exe')) or os.path.exists(os.path.join(bin_path, 'ffmpeg')) else None
+    ffmpeg_exe = os.path.join(bin_path, 'ffmpeg.exe')
+    ffmpeg_path = bin_path if os.path.exists(ffmpeg_exe) or os.path.exists(os.path.join(bin_path, 'ffmpeg')) else None
+
+    if ffmpeg_path:
+        add_log(f"Using local FFmpeg from: {bin_path}")
+    else:
+        # Check if ffmpeg is in system path
+        import shutil
+        if shutil.which('ffmpeg'):
+            pass # add_log("Using system FFmpeg")
+        else:
+            add_log("⚠️ Warning: FFmpeg not found! Audio extraction and video merging will fail.")
 
     opts = {
-        'outtmpl': os.path.join(folder, '%(title)s [%(id)s].%(ext)s'),
+        'outtmpl': {
+            'default': os.path.join(folder, '%(title)s [%(id)s].%(ext)s'),
+            'playlist': os.path.join(folder, '%(playlist)s', '%(playlist_index)s - %(title)s [%(id)s].%(ext)s'),
+        },
         'paths': {'home': folder},
         'progress_hooks': [progress_hook],
         'quiet': False,
@@ -90,42 +118,90 @@ def get_ydl_opts(folder, mode, resolution):
         'continuedl': True,
         'retries': 10,
         'fragment_retries': 10,
-        'ignoreerrors': False,
+        'ignoreerrors': True, # Skip errors to continue playlist if one fails
+        'concurrent_fragment_downloads': 5,
+        'nocheckcertificate': True,
+        'socket_timeout': 30,
+        'geo_bypass': True,
+        'updatetime': False,
+        # Browser-like headers to avoid 403 Forbidden
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+        },
+        # YouTube specific tweaks
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'], # Try multiple clients
+                'skip': ['dash', 'hls'], # Some DASH/HLS streams fail with 403
+            }
+        }
     }
 
     if ffmpeg_path:
         opts['ffmpeg_location'] = ffmpeg_path
     
+    # Post-processors list
+    pps = []
+
     if mode == "Audio":
         # Audio-only mode: extract best audio as MP3
         opts.update({
             'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '320',
-            }],
+        })
+        pps.append({
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '320',
         })
         add_log(f"Mode: Audio extraction (MP3 320kbps)")
     else:
         # Video mode with resolution selection
         if resolution == "Best":
             fmt = 'bestvideo+bestaudio/best'
-            add_log(f"Mode: Video (Best available quality)")
         else:
-            # Extract height from resolution string (e.g., "1080p" -> 1080)
             try:
                 height = int(resolution.split('p')[0])
-                fmt = f'bestvideo[height<={height}]+bestaudio/best[height<={height}]/best'
-                add_log(f"Mode: Video (Max {height}p)")
+                fmt = f'bestvideo[height<={height}]+bestaudio/best[height<={height}]/bestvideo+bestaudio/best'
             except:
                 fmt = 'bestvideo+bestaudio/best'
-                add_log(f"Mode: Video (Best available quality)")
         
         opts.update({
             'format': fmt,
             'merge_output_format': 'mp4',
         })
+
+    # Subtitles
+    if subtitles:
+        opts.update({
+            'writesubtitles': True,
+            'allsubtitles': False,
+            'subtitleslangs': ['en', '.*'],
+            'writeautomaticsub': True,
+        })
+        pps.append({
+            'key': 'FFmpegEmbedSubtitle',
+        })
+        add_log("Feature enabled: Download/Embed Subtitles")
+
+    # Thumbnail
+    if embed_thumbnail:
+        opts.update({
+            'writethumbnail': True,
+        })
+        pps.append({
+            'key': 'EmbedThumbnail',
+        })
+        pps.append({
+            'key': 'FFmpegMetadata',
+            'add_metadata': True,
+        })
+        add_log("Feature enabled: Embed Thumbnail")
+
+    if pps:
+        opts['postprocessors'] = pps
     
     return opts
 
@@ -139,7 +215,7 @@ def download_worker():
             if task is None:  # Poison pill to stop the worker
                 break
             
-            url, folder, mode, resolution = task
+            url, folder, mode, resolution, subtitles, embed_thumbnail = task
             
             with status_lock:
                 download_status['is_downloading'] = True
@@ -151,33 +227,13 @@ def download_worker():
                 download_status['title'] = ''
             
             add_log(f"Starting download: {url}")
-            add_log(f"Save location: {folder}")
             
             try:
-                ydl_opts = get_ydl_opts(folder, mode, resolution)
+                ydl_opts = get_ydl_opts(folder, mode, resolution, subtitles, embed_thumbnail)
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    # Extract info first
-                    info = ydl.extract_info(url, download=False)
-                    
-                    # Check if it's a playlist
-                    if 'entries' in info:
-                        video_count = len(list(info['entries']))
-                        add_log(f"Detected playlist with {video_count} videos")
-                        
-                        # Update output template for playlists
-                        ydl_opts['outtmpl'] = os.path.join(
-                            folder, 
-                            '%(playlist)s',
-                            '%(playlist_index)s - %(title)s [%(id)s].%(ext)s'
-                        )
-                        
-                        # Re-create YoutubeDL with updated options
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl_playlist:
-                            ydl_playlist.download([url])
-                    else:
-                        # Single video
-                        ydl.download([url])
+                    # Direct download
+                    ydl.download([url])
                 
                 with status_lock:
                     download_status['status'] = 'completed'
@@ -214,6 +270,42 @@ def index():
                           default_folder=Config.DEFAULT_DOWNLOAD_FOLDER)
 
 
+@app.route('/api/info', methods=['POST'])
+def get_video_info():
+    """Fetch video metadata without downloading"""
+    data = request.get_json()
+    url = data.get('url', '').strip()
+    
+    if not url:
+        return jsonify({'success': False, 'error': 'URL is required'}), 400
+        
+    try:
+        # Minimal options for fast extraction
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'extract_flat': 'in_playlist',
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            # Use 'thumbnail' or first entry in 'thumbnails'
+            thumb = info.get('thumbnail')
+            if not thumb and info.get('thumbnails'):
+                thumb = info['thumbnails'][-1]['url']
+                
+            return jsonify({
+                'success': True,
+                'title': info.get('title', 'Unknown Title'),
+                'thumbnail': thumb,
+                'duration': info.get('duration_string'),
+                'is_playlist': 'entries' in info
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
 @app.route('/api/download', methods=['POST'])
 def start_download():
     """API endpoint to start a download"""
@@ -226,6 +318,8 @@ def start_download():
     mode = data.get('mode', 'Video')
     resolution = data.get('resolution', 'Best')
     folder = data.get('folder', Config.DEFAULT_DOWNLOAD_FOLDER).strip()
+    subtitles = data.get('subtitles', False)
+    embed_thumbnail = data.get('embed_thumbnail', False)
     
     # Validate inputs
     if not url:
@@ -249,7 +343,7 @@ def start_download():
         download_status['logs'] = []
     
     # Add to download queue
-    download_queue.put((url, folder, mode, resolution))
+    download_queue.put((url, folder, mode, resolution, subtitles, embed_thumbnail))
     
     return jsonify({'success': True, 'message': 'Download started'})
 

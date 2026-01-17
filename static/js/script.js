@@ -5,6 +5,8 @@
 const downloadForm = document.getElementById('downloadForm');
 const downloadBtn = document.getElementById('downloadBtn');
 const cancelBtn = document.getElementById('cancelBtn');
+const previewBtn = document.getElementById('previewBtn');
+const videoPreview = document.getElementById('videoPreview');
 const progressCard = document.getElementById('progressCard');
 const logsDiv = document.getElementById('logs');
 const clearLogsBtn = document.getElementById('clearLogsBtn');
@@ -39,9 +41,54 @@ document.addEventListener('DOMContentLoaded', function() {
     // Clear logs button
     clearLogsBtn.addEventListener('click', clearLogs);
 
+    // Preview button
+    previewBtn.addEventListener('click', fetchVideoInfo);
+
+    // Fetch info on enter in URL field
+    document.getElementById('url').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            fetchVideoInfo();
+        }
+    });
+
     // Start status polling (check every 500ms when downloading)
     startStatusPolling();
 });
+
+// Fetch video info metadata
+async function fetchVideoInfo() {
+    const url = document.getElementById('url').value.trim();
+    if (!url) return;
+
+    previewBtn.disabled = true;
+    previewBtn.textContent = '⏳';
+    
+    try {
+        const response = await fetch('/api/info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            videoPreview.style.display = 'flex';
+            document.getElementById('previewThumb').src = data.thumbnail;
+            document.getElementById('previewTitle').textContent = data.title;
+            document.getElementById('previewMeta').textContent = 
+                (data.is_playlist ? 'Playlist' : 'Video') + 
+                (data.duration ? ` • ${data.duration}` : '');
+        } else {
+            addLog(`Preview Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('Info error:', error);
+    } finally {
+        previewBtn.disabled = false;
+        previewBtn.textContent = '🔍';
+    }
+}
 
 // Handle download form submission
 async function handleDownload(e) {
@@ -56,7 +103,9 @@ async function handleDownload(e) {
         url: document.getElementById('url').value.trim(),
         mode: document.querySelector('input[name="mode"]:checked').value,
         resolution: document.getElementById('resolution').value,
-        folder: document.getElementById('folder').value.trim()
+        folder: document.getElementById('folder').value.trim(),
+        subtitles: document.getElementById('subtitles').checked,
+        embed_thumbnail: document.getElementById('embed_thumbnail').checked
     };
 
     // Validate URL
@@ -152,8 +201,8 @@ function updateStatus(status) {
     statusElement.textContent = capitalizeFirst(status.status);
     statusElement.className = 'value ' + status.status;
 
-    // Update progress
-    const progress = Math.round(status.progress);
+    // Update progress - ensure it's a number and handled correctly
+    const progress = Math.min(100, Math.max(0, Math.round(parseFloat(status.progress) || 0)));
     document.getElementById('progressText').textContent = progress + '%';
     document.getElementById('progressFill').style.width = progress + '%';
 
@@ -170,9 +219,10 @@ function updateStatus(status) {
     // Update logs
     if (status.logs && status.logs.length > 0) {
         const lastLog = status.logs[status.logs.length - 1];
-        const existingLogs = Array.from(logsDiv.children).map(el => el.textContent);
+        const logElements = logsDiv.querySelectorAll('.log-entry');
+        const lastInUI = logElements.length > 0 ? logElements[logElements.length - 1].textContent : "";
         
-        if (!existingLogs.includes(lastLog)) {
+        if (!lastInUI.includes(lastLog)) {
             addLog(lastLog);
         }
     }
@@ -181,12 +231,6 @@ function updateStatus(status) {
     if (status.status === 'completed' || status.status === 'error' || status.status === 'cancelled') {
         isDownloading = false;
         updateUIState(false);
-        
-        if (status.status === 'completed') {
-            showNotification('Download completed successfully!', 'success');
-        } else if (status.status === 'error') {
-            showNotification('Download failed - check logs', 'error');
-        }
     }
 }
 
