@@ -70,33 +70,9 @@ If you have a local Node.js runtime (installed by `setup_dependencies.py`), you 
 
 ---
 
-## 🐳 Dockerize (Example)
+## 🐳 Dockerize
 
-If you want to run the app in Docker, create a `Dockerfile` like this:
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# System deps: ffmpeg + curl for node setup
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl unzip \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-# Optional: install node runtime for yt-dlp JS challenges
-RUN python setup_dependencies.py
-
-EXPOSE 5000
-CMD ["python", "app.py"]
-```
-
-Build and run:
+A Dockerfile is included at the project root. Build and run:
 
 ```bash
 docker build -t yt-downloader-plus .

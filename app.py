@@ -352,7 +352,7 @@ def get_ydl_opts(folder, mode, resolution, subtitles=False, embed_thumbnail=Fals
     else:
         # Video mode with resolution selection
         if resolution == "Best":
-            # Allow any container/stream type to avoid "format not available" when mp4 isn't offered
+            # Match CLI defaults exactly
             fmt = 'bestvideo*+bestaudio/best'
         else:
             try:
@@ -360,14 +360,16 @@ def get_ydl_opts(folder, mode, resolution, subtitles=False, embed_thumbnail=Fals
                 fmt = f'bestvideo*[height<={height}]+bestaudio/best[height<={height}]/best'
             except Exception:
                 fmt = 'bestvideo*+bestaudio/best'
-        
+
         opts.update({
             'format': fmt,
             'merge_output_format': 'mkv',
             'prefer_ffmpeg': True,
-            # Prefer highest quality variants when multiple formats match
-            'format_sort': ['res', 'fps', 'hdr', 'vcodec', 'acodec', 'size'],
         })
+
+        if resolution != "Best":
+            # Prefer highest quality variants when multiple formats match
+            opts['format_sort'] = ['res', 'fps', 'hdr', 'vcodec', 'acodec', 'size']
 
     # Subtitles - disabled for speed (significantly slows down download)
     # Uncomment to enable:
@@ -501,8 +503,8 @@ def download_worker(worker_id):
                             allow_fallback_clients=True
                         )
 
-                        # Relax format constraints on retry
-                        alt_opts['format'] = 'best'
+                        # Keep format selection aligned with primary settings
+                        alt_opts['format'] = ydl_opts.get('format', 'bestvideo*+bestaudio/best')
 
                         if not Config.USE_NODE_RUNTIME:
                             import shutil
