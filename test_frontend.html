@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Test</title>
+</head>
+<body>
+    <h1>Test Page</h1>
+    <button id="testBtn" onclick="testDownload()">Test Download API</button>
+    <div id="result"></div>
+    
+    <script>
+        console.log('Test page loaded');
+        
+        async function testDownload() {
+            console.log('Test button clicked');
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Sending request...';
+            
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+                        mode: 'Video',
+                        resolution: 'Best',
+                        folder: 'downloads',
+                        subtitles: false,
+                        embed_thumbnail: false
+                    })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = `Status: ${response.status}<br>Response: ${JSON.stringify(data)}`;
+                console.log('Response:', data);
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+                console.error('Error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

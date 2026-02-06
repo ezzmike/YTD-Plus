@@ -18,7 +18,7 @@
                 <form id="downloadForm">
                     <!-- URL Input -->
                     <div class="form-group">
-                        <label for="url">YouTube URL (video or playlist):</label>
+                        <label for="url">YouTube URL (video, channel, or playlist):</label>
                         <div class="url-input-wrapper">
                             <input 
                                 type="text" 
@@ -29,6 +29,42 @@
                                 autocomplete="off">
                             <button type="button" id="previewBtn" class="btn btn-secondary btn-icon">🔍</button>
                         </div>
+                    </div>
+
+                    <!-- Download Type Selection -->
+                    <div class="form-group">
+                        <label>Download Type:</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="download_type" value="single" checked>
+                                <span>Single Video</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="download_type" value="playlist">
+                                <span>Playlist</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="download_type" value="channel">
+                                <span>Channel</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Channel Options (hidden by default) -->
+                    <div class="form-group" id="channelOptionsGroup" style="display: none;">
+                        <label>Channel Download Mode:</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="channel_mode" value="all" checked>
+                                <span>All Videos</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="channel_mode" value="recent">
+                                <span>Recent Videos</span>
+                            </label>
+                        </div>
+                        <label for="video_count">Number of Recent Videos:</label>
+                        <input type="number" id="video_count" name="video_count" min="1" max="100" value="10" style="width: 80px;">
                     </div>
 
                     <!-- Video Preview Area -->
@@ -114,6 +150,10 @@
                     <div class="info-row">
                         <span class="label">Status:</span>
                         <span id="status" class="value">Idle</span>
+                    </div>
+                    <div class="info-row" id="currentActionRow" style="display: none;">
+                        <span class="label" style="color: #2196F3; font-weight: bold;">Current Action:</span>
+                        <span id="currentAction" class="value" style="color: #2196F3; font-weight: bold;"></span>
                     </div>
                     <div class="info-row">
                         <span class="label">Progress:</span>

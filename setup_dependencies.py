@@ -7,6 +7,8 @@ import urllib.request
 import zipfile
 import shutil
 
+NODE_VERSION = "v20.11.1"
+
 def setup_ffmpeg():
     print("🚀 Starting FFmpeg portable setup...")
     
@@ -54,5 +56,55 @@ def setup_ffmpeg():
         if os.path.exists(temp_zip):
             os.remove(temp_zip)
 
+
+def setup_nodejs():
+    print("🚀 Starting Node.js portable setup...")
+
+    bin_dir = os.path.join(os.getcwd(), 'bin')
+    temp_zip = os.path.join(os.getcwd(), 'node_temp.zip')
+    node_exe = os.path.join(bin_dir, 'node.exe')
+
+    if not os.path.exists(bin_dir):
+        os.makedirs(bin_dir)
+        print(f"Created directory: {bin_dir}")
+
+    if os.path.exists(node_exe):
+        print("✅ Node.js is already present in /bin folder.")
+        return
+
+    node_url = f"https://nodejs.org/dist/{NODE_VERSION}/node-{NODE_VERSION}-win-x64.zip"
+
+    try:
+        print(f"📥 Downloading Node.js from: {node_url}")
+        print("This might take a minute (approx 30-40MB)...")
+
+        with urllib.request.urlopen(node_url) as response:
+            with open(temp_zip, 'wb') as f:
+                shutil.copyfileobj(response, f)
+
+        print("📦 Extracting node.exe...")
+        with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+            for member in zip_ref.namelist():
+                if member.lower().endswith('node.exe'):
+                    source = zip_ref.open(member)
+                    target = open(node_exe, "wb")
+                    with source, target:
+                        shutil.copyfileobj(source, target)
+                    print("  Extracted: node.exe")
+                    break
+
+        if not os.path.exists(node_exe):
+            raise Exception("node.exe not found in the archive")
+
+        print("✨ Node.js setup complete! JS runtime is now available locally.")
+
+    except Exception as e:
+        print(f"❌ Error during setup: {str(e)}")
+        print("\nManual fix: Install Node.js from nodejs.org or place node.exe in the /bin folder.")
+    finally:
+        if os.path.exists(temp_zip):
+            os.remove(temp_zip)
+
 if __name__ == "__main__":
     setup_ffmpeg()
+    setup_nodejs()
