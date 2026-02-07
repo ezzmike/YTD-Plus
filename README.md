@@ -85,6 +85,82 @@ docker run --rm -p 5000:5000 -v "${PWD}/downloads:/app/downloads" yt-downloader-
 
 ---
 
+## 🗄️ Synology NAS (Container Manager)
+
+You can run this on Synology using Container Manager (DSM 7+). The easiest path is to build locally and push, or build directly on the NAS.
+
+### Option A: Build on NAS
+
+1. **SSH into the NAS** and clone the repo.
+1. **Build the image** in the repo folder:
+
+```bash
+docker build -t yt-downloader-plus:latest .
+```
+
+1. **Create a folder for downloads** (example):
+
+```bash
+mkdir -p /volume1/docker/yt_downloader_plus/downloads
+```
+
+1. **Run the container**:
+
+```bash
+docker run -d \
+  --name yt-downloader-plus \
+  -p 5000:5000 \
+  -v /volume1/docker/yt_downloader_plus/downloads:/app/downloads \
+  yt-downloader-plus:latest
+```
+
+### Option A1: docker-compose on Synology
+
+If you prefer compose, a sample file is included: [docker-compose.yml](docker-compose.yml).
+
+1. Copy the repo to the NAS (or download the compose file).
+1. Edit the volume path if needed.
+1. Run:
+
+```bash
+docker compose up -d --build
+```
+
+### Option A2: docker-compose with prebuilt image
+
+If you are pulling a prebuilt image (for example from your own registry), use a compose file like this:
+
+```yaml
+services:
+  yt-downloader-plus:
+    image: your-registry/yt-downloader-plus:latest
+    container_name: yt-downloader-plus
+    ports:
+      - "5000:5000"
+    volumes:
+      - /volume1/docker/yt_downloader_plus/downloads:/app/downloads
+    restart: unless-stopped
+```
+
+### Option B: Build locally, push to NAS
+
+1. Build locally: `docker build -t yt-downloader-plus:latest .`
+1. Save and copy to NAS:
+
+```bash
+docker save yt-downloader-plus:latest -o yt-downloader-plus.tar
+```
+
+1. In Container Manager, **Import Image** and run it with the same port and volume mappings as above.
+
+### Notes for Synology
+
+* Use `http://NAS-IP:5000` to access the UI on your LAN.
+* If you need cookies, use `COOKIES_FILE` instead of browser cookies (containers cannot read your NAS browser profiles).
+* Make sure the mapped download folder is writable by Docker.
+
+---
+
 ## ✅ Requirements
 
 * **Python 3.8+**

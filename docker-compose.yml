@@ -1,0 +1,9 @@
+services:
+  yt-downloader-plus:
+    build: .
+    container_name: yt-downloader-plus
+    ports:
+      - "5000:5000"
+    volumes:
+      - /volume1/docker/yt_downloader_plus/downloads:/app/downloads
+    restart: unless-stopped
