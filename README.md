@@ -126,6 +126,8 @@ If you prefer compose, a sample file is included: [docker-compose.yml](docker-co
 docker compose up -d --build
 ```
 
+If you want Synology-specific placeholders and comments, use: [docker-compose.synology.yml](docker-compose.synology.yml).
+
 ### Option A2: docker-compose with prebuilt image
 
 If you are pulling a prebuilt image (for example from your own registry), use a compose file like this:

@@ -1,0 +1,16 @@
+services:
+  yt-downloader-plus:
+    image: your-registry/yt-downloader-plus:latest
+    container_name: yt-downloader-plus
+    ports:
+      - "${YTDP_PORT:-5000}:5000"
+    environment:
+      # Optional: set Flask host/port if you change defaults
+      - HOST=0.0.0.0
+      - PORT=5000
+      # Optional: set an absolute download folder used by the app
+      # - DEFAULT_DOWNLOAD_FOLDER=/app/downloads
+    volumes:
+      # Set this to your Synology volume path
+      - "${YTDP_DOWNLOADS:-/volume1/docker/yt_downloader_plus/downloads}:/app/downloads"
+    restart: unless-stopped
