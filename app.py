@@ -4,6 +4,7 @@
 
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import yt_dlp
+from yt_dlp.utils import DownloadError
 import os
 import threading
 import queue
@@ -24,7 +25,9 @@ ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 download_queue = queue.Queue(maxsize=100)  # Unlimited queue with 100 max pending
 download_status = {}
 active_downloads_urls = set()  # Track URLs currently being downloaded
-status_lock = threading.Lock()
+queued_urls = set()  # Track URLs queued but not yet started
+cancel_event = threading.Event()
+status_lock = threading.RLock()
 worker_threads = []  # List of active worker threads
 MAX_CONCURRENT_DOWNLOADS = Config.MAX_CONCURRENT_DOWNLOADS  # Allow up to N simultaneous downloads
 
@@ -43,6 +46,9 @@ DEFAULT_STATUS = {
     'logs': [],
     'output_folder': '',
     'mode': '',
+    'playlist_total': 0,
+    'playlist_completed': 0,
+    'playlist_current': 0,
 }
 
 def get_download_status():
@@ -80,6 +86,8 @@ def add_log(message):
     with status_lock:
         timestamp = time.strftime('%H:%M:%S')
         clean_msg = strip_ansi(message)
+        clean_msg = clean_msg.replace('Unknown B/s ETA Unknown', '- ETA -')
+        clean_msg = clean_msg.replace('ETA Unknown', 'ETA -')
         if 'logs' not in download_status:
             download_status['logs'] = []
         download_status['logs'].append(f"[{timestamp}] {clean_msg}")
@@ -114,7 +122,18 @@ def cleanup_intermediate_files(folder, video_title):
 
 def progress_hook(d):
     """Callback for yt-dlp progress updates"""
+    if cancel_event.is_set():
+        raise DownloadError("Cancelled by user")
     with status_lock:
+        info = d.get('info_dict') if isinstance(d, dict) else None
+        if info:
+            playlist_total = info.get('playlist_count')
+            playlist_index = info.get('playlist_index')
+            if isinstance(playlist_total, int) and playlist_total > 1:
+                download_status['playlist_total'] = playlist_total
+            if isinstance(playlist_index, int) and playlist_index > 0:
+                download_status['playlist_current'] = playlist_index
+
         if d['status'] == 'downloading':
             # Extract progress information and strip ANSI
             percent_str = strip_ansi(d.get('_percent_str', '0%')).strip()
@@ -146,7 +165,7 @@ def progress_hook(d):
             
             download_status['progress'] = percent
             download_status['status'] = 'downloading'
-            if speed_str in ('', 'N/A'):
+            if speed_str in ('', 'N/A') or 'Unknown' in speed_str:
                 downloaded_bytes = d.get('downloaded_bytes')
                 elapsed = d.get('elapsed')
                 if downloaded_bytes is not None and elapsed:
@@ -155,6 +174,8 @@ def progress_hook(d):
                         speed_str = f"{speed/1024/1024:.2f} MiB/s"
                     except Exception:
                         pass
+            if eta_str in ('', 'N/A') or 'Unknown' in eta_str:
+                eta_str = ''
             download_status['speed'] = speed_str
             download_status['eta'] = eta_str
             download_status['last_progress_at'] = time.time()
@@ -185,6 +206,13 @@ def progress_hook(d):
             download_status['last_progress_at'] = time.time()
             download_status['stalled_for'] = 0
             add_log("Download finished, extracting and processing...")
+            if info:
+                playlist_index = info.get('playlist_index')
+                if isinstance(playlist_index, int) and playlist_index > 0:
+                    download_status['playlist_completed'] = max(
+                        download_status.get('playlist_completed', 0),
+                        playlist_index
+                    )
             
         elif d['status'] == 'postprocessing':
             # Detect what's being post-processed
@@ -225,6 +253,14 @@ def build_youtube_extractor_args(allow_fallback_clients=False):
         clients.remove('ios')
         add_log("iOS client disabled (missing PO token)")
 
+    if not Config.YOUTUBE_PO_TOKEN_MWEB and 'mweb' in clients:
+        clients.remove('mweb')
+        add_log("mweb client disabled (missing PO token)")
+
+    if not Config.YOUTUBE_PO_TOKEN_ANDROID and 'android' in clients:
+        clients.remove('android')
+        add_log("android client disabled (missing PO token)")
+
     if not getattr(Config, 'ALLOW_DRM_CLIENTS', False) and 'tv' in clients:
         clients.remove('tv')
         add_log("TV client disabled (DRM-prone formats)")
@@ -232,11 +268,18 @@ def build_youtube_extractor_args(allow_fallback_clients=False):
     if allow_fallback_clients:
         for client in ['web', 'mweb', 'android']:
             if client not in clients:
+                if client == 'mweb' and not Config.YOUTUBE_PO_TOKEN_MWEB:
+                    continue
+                if client == 'android' and not Config.YOUTUBE_PO_TOKEN_ANDROID:
+                    continue
                 clients.append(client)
         if getattr(Config, 'ALLOW_DRM_CLIENTS', False) and 'tv' not in clients:
             clients.append('tv')
         if Config.YOUTUBE_PO_TOKEN_IOS and 'ios' not in clients:
             clients.append('ios')
+
+    if not clients and not allow_fallback_clients and not po_tokens:
+        return None
 
     if not clients:
         clients = ['web']
@@ -247,8 +290,6 @@ def build_youtube_extractor_args(allow_fallback_clients=False):
 
     if po_tokens:
         extractor_args['po_token'] = po_tokens
-    elif getattr(Config, 'ALLOW_MISSING_PO_FORMATS', False):
-        extractor_args['formats'] = cast(Any, 'missing_pot')
 
     return {'youtube': extractor_args}
 
@@ -305,12 +346,15 @@ def get_ydl_opts(folder, mode, resolution, subtitles=False, embed_thumbnail=Fals
             'Accept-Language': 'en-us,en;q=0.5',
             'Sec-Fetch-Mode': 'navigate',
         },
-        'extractor_args': extractor_args
+        **({'extractor_args': extractor_args} if extractor_args else {})
     }
 
     if Config.COOKIES_FILE and os.path.exists(Config.COOKIES_FILE):
         opts['cookiefile'] = Config.COOKIES_FILE
         add_log(f"Using cookies file: {Config.COOKIES_FILE}")
+    elif Config.COOKIES_FROM_BROWSER:
+        opts['cookiesfrombrowser'] = (Config.COOKIES_FROM_BROWSER,)
+        add_log(f"Using cookies from browser: {Config.COOKIES_FROM_BROWSER}")
 
     if ffmpeg_path:
         opts['ffmpeg_location'] = ffmpeg_path
@@ -352,7 +396,7 @@ def get_ydl_opts(folder, mode, resolution, subtitles=False, embed_thumbnail=Fals
     else:
         # Video mode with resolution selection
         if resolution == "Best":
-            # Match CLI defaults exactly
+            # Default to highest possible quality
             fmt = 'bestvideo*+bestaudio/best'
         else:
             try:
@@ -367,9 +411,8 @@ def get_ydl_opts(folder, mode, resolution, subtitles=False, embed_thumbnail=Fals
             'prefer_ffmpeg': True,
         })
 
-        if resolution != "Best":
-            # Prefer highest quality variants when multiple formats match
-            opts['format_sort'] = ['res', 'fps', 'hdr', 'vcodec', 'acodec', 'size']
+        # Prefer highest quality variants when multiple formats match
+        opts['format_sort'] = ['res', 'fps', 'hdr', 'vcodec', 'acodec', 'size']
 
     # Subtitles - disabled for speed (significantly slows down download)
     # Uncomment to enable:
@@ -416,6 +459,8 @@ def build_po_tokens():
         tokens.append(f"web.gvs+{Config.YOUTUBE_PO_TOKEN_WEB}")
     if Config.YOUTUBE_PO_TOKEN_MWEB:
         tokens.append(f"mweb.gvs+{Config.YOUTUBE_PO_TOKEN_MWEB}")
+    if Config.YOUTUBE_PO_TOKEN_ANDROID:
+        tokens.append(f"android.gvs+{Config.YOUTUBE_PO_TOKEN_ANDROID}")
     if Config.YOUTUBE_PO_TOKEN_IOS:
         tokens.append(f"ios.gvs+{Config.YOUTUBE_PO_TOKEN_IOS}")
     return tokens
@@ -443,6 +488,10 @@ def download_worker(worker_id):
             download_type = task[6] if len(task) > 6 else 'single'
             channel_mode = task[7] if len(task) > 7 else 'all'
             video_count = task[8] if len(task) > 8 else 10
+
+            with status_lock:
+                queued_urls.discard(url)
+            cancel_event.clear()
             
             with status_lock:
                 # Increment active download count and track URL
@@ -460,6 +509,9 @@ def download_worker(worker_id):
                 download_status['title'] = ''
                 download_status['last_progress_at'] = time.time()
                 download_status['stalled_for'] = 0
+                download_status['playlist_total'] = 0
+                download_status['playlist_completed'] = 0
+                download_status['playlist_current'] = 0
             
             print(f"[Worker {worker_id}] Starting download: {url}")
             add_log(f"Starting download: {url}")
@@ -496,7 +548,16 @@ def download_worker(worker_id):
                     info = attempt_download(ydl_opts)
                 except Exception as e:
                     error_msg = str(e)
-                    if 'Requested format is not available' in error_msg or 'Only images are available' in error_msg:
+                    if cancel_event.is_set() or 'Cancelled by user' in error_msg:
+                        raise
+
+                    if 'Could not copy Chrome cookie database' in error_msg:
+                        add_log("Browser cookies are locked. Close the browser or provide a cookies.txt file. Retrying without browser cookies...")
+                        no_cookie_opts = copy.deepcopy(ydl_opts)
+                        if 'cookiesfrombrowser' in no_cookie_opts:
+                            del no_cookie_opts['cookiesfrombrowser']
+                        info = attempt_download(no_cookie_opts)
+                    elif 'Requested format is not available' in error_msg or 'Only images are available' in error_msg:
                         add_log("Retrying with alternate YouTube client settings...")
                         alt_opts = copy.deepcopy(ydl_opts)
                         alt_opts['extractor_args'] = build_youtube_extractor_args(
@@ -521,6 +582,28 @@ def download_worker(worker_id):
                         raise
 
                 print(f"[Worker {worker_id}] yt-dlp extraction complete")
+
+                try:
+                    requested_formats = info.get('requested_formats')
+                    if requested_formats:
+                        fmt_parts = []
+                        for fmt in requested_formats:
+                            fmt_parts.append(
+                                f"{fmt.get('format_id')} ({fmt.get('ext')}, {fmt.get('height')}p, {fmt.get('vcodec')}/{fmt.get('acodec')})"
+                            )
+                        add_log(f"Selected formats: {', '.join(fmt_parts)}")
+                    else:
+                        add_log(
+                            "Selected format: "
+                            f"{info.get('format_id')} ({info.get('ext')}, {info.get('height')}p, {info.get('vcodec')}/{info.get('acodec')})"
+                        )
+
+                    if mode == "Video" and resolution == "Best":
+                        height = info.get('height')
+                        if isinstance(height, int) and height < 720:
+                            add_log("Low quality detected for Best. Consider setting YouTube PO tokens or cookies for higher formats.")
+                except Exception:
+                    pass
 
                 # Update status to show finalization
                 with status_lock:
@@ -573,19 +656,31 @@ def download_worker(worker_id):
                     download_status['status'] = 'completed'
                     download_status['progress'] = 100
                     download_status['current_action'] = 'Complete!'
+                    download_status['eta'] = ''
+                    download_status['speed'] = ''
+                    if download_status.get('playlist_total', 0) > 0:
+                        download_status['playlist_completed'] = download_status.get('playlist_total', 0)
                 
                 print(f"[Worker {worker_id}] ✓ Download completed successfully!")
                 add_log("✓ Download completed successfully!")
                 
             except Exception as e:
                 with status_lock:
-                    download_status['status'] = 'error'
-                    # Don't reset progress to 0 - keep it at current value
-                    download_status['current_action'] = 'Error occurred'
+                    if cancel_event.is_set() or 'Cancelled by user' in str(e):
+                        download_status['status'] = 'cancelled'
+                        download_status['current_action'] = 'Cancelled'
+                    else:
+                        download_status['status'] = 'error'
+                        # Don't reset progress to 0 - keep it at current value
+                        download_status['current_action'] = 'Error occurred'
                 
                 error_msg = str(e)
-                print(f"[Worker {worker_id}] ✗ Error: {error_msg}")
-                add_log(f"✗ Error: {error_msg}")
+                if cancel_event.is_set() or 'Cancelled by user' in error_msg:
+                    print(f"[Worker {worker_id}] ✗ Cancelled")
+                    add_log("✗ Cancelled by user")
+                else:
+                    print(f"[Worker {worker_id}] ✗ Error: {error_msg}")
+                    add_log(f"✗ Error: {error_msg}")
                 if 'Requested format is not available' in error_msg or 'Only images are available' in error_msg:
                     add_log("Hint: This video may require a YouTube PO token or JS runtime. Try setting PO tokens in config.py or enabling Node.js runtime.")
                 
@@ -729,6 +824,8 @@ def start_download():
     with status_lock:
         if url in active_downloads_urls:
             return jsonify({'success': False, 'error': 'This URL is already being downloaded'}), 409
+        if url in queued_urls:
+            return jsonify({'success': False, 'error': 'This URL is already queued'}), 409
         
         # Reset logs for new download (allow unlimited concurrent downloads)
         download_status['logs'] = []
@@ -739,8 +836,12 @@ def start_download():
     
     # Add to download queue
     try:
+        with status_lock:
+            queued_urls.add(url)
         download_queue.put((url, folder, mode, resolution, subtitles, embed_thumbnail, download_type, channel_mode, video_count), timeout=5)
     except queue.Full:
+        with status_lock:
+            queued_urls.discard(url)
         return jsonify({'success': False, 'error': 'Download queue is full - try again later'}), 503
     
     return jsonify({'success': True, 'message': 'Download queued and processing...'})
@@ -787,6 +888,8 @@ def get_status():
                 download_status['status'] = 'completed'
                 download_status['progress'] = 100
                 download_status['current_action'] = 'Complete!'
+                download_status['eta'] = ''
+                download_status['speed'] = ''
         return jsonify(download_status.copy())
 
 
@@ -796,6 +899,7 @@ def cancel_download():
     # Note: yt-dlp doesn't support graceful cancellation
     # This will just clear the queue and mark as cancelled
     get_download_status()
+    cancel_event.set()
     cleared = 0
     try:
         while True:
@@ -807,6 +911,9 @@ def cancel_download():
         pass
 
     with status_lock:
+        queued_urls.clear()
+
+    with status_lock:
         if download_status.get('is_downloading') or cleared > 0:
             download_status['status'] = 'cancelled'
             add_log("Cancel requested (may leave partial files)")
@@ -815,6 +922,15 @@ def cancel_download():
             return jsonify({'success': True, 'message': 'Cancellation requested'})
         else:
             return jsonify({'success': False, 'error': 'No download in progress'}), 400
+
+
+@app.route('/api/clear_logs', methods=['POST'])
+def clear_logs():
+    """API endpoint to clear activity logs"""
+    get_download_status()
+    with status_lock:
+        download_status['logs'] = []
+    return jsonify({'success': True})
 
 
 @app.route('/downloads/<path:filename>')

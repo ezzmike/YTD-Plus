@@ -12,19 +12,22 @@ YT Downloader Plus turns your machine into a powerful media server, allowing you
 
 ## 🚀 Key Features
 
-*   **📺 Playlist Power** — Handles single videos, massive playlists, and entire channels like a pro.
-*   **📐 Quality Control** — Pick your perfect resolution: 4K, 1440p, 1080p, 720p, or just "Best".
-*   **🎵 Audio extraction** — Convert videos to high-quality 320kbps MP3s with one click.
-*   **🌐 Network-Wide Access** — Run it on your PC, access it from your Phone, Tablet, or TV.
-*   **⚡ Zero-Config (FFmpeg Included)** — No need to mess with system PATHs. One command sets up everything!
-*   **📊 Live Progress** — Watch your downloads happen with real-time speed, ETA, and logs.
-*   **🔀 Resumable** — Interrupted? No problem. yt-dlp picks up right where it left off.
+* **📺 Playlist Power** — Handles single videos, massive playlists, and entire channels like a pro.
+* **📐 Quality Control** — Pick your perfect resolution: 4K, 1440p, 1080p, 720p, or just "Best".
+* **🎵 Audio extraction** — Convert videos to high-quality 320kbps MP3s with one click.
+* **🌐 Network-Wide Access** — Run it on your PC, access it from your Phone, Tablet, or TV.
+* **⚡ Zero-Config (FFmpeg Included)** — No need to mess with system PATHs. One command sets up everything!
+* **📊 Live Progress** — Real-time speed, ETA, logs, plus playlist progress like 2/10.
+* **🔀 Resumable** — Interrupted? No problem. yt-dlp picks up right where it left off.
+* **🟢 Live Status Pill** — Compact header status for quick at-a-glance feedback.
+* **🧹 Clear Logs** — Wipe the activity log instantly without refreshing.
 
 ---
 
 ## 🛠️ Quick Start
 
 ### ⚡ Portable Setup (The Easy Way)
+
 We've made it super simple to include all dependencies (including FFmpeg) directly in the folder:
 
 ```bash
@@ -43,6 +46,7 @@ python app.py
 ```
 
 ### 3. Open the UI
+
 Grab your browser and head to:
 
 * **Local:** `http://localhost:5000`
@@ -86,6 +90,7 @@ docker run --rm -p 5000:5000 -v "${PWD}/downloads:/app/downloads" yt-downloader-
 * **Python 3.8+**
 * **FFmpeg** (automatic portable setup via `setup_dependencies.py`)
 * **Node.js** (automatic portable setup via `setup_dependencies.py`, improves YouTube format support)
+* **Browser cookies (optional)** for restricted formats via `COOKIES_FROM_BROWSER` or `COOKIES_FILE`
 
 ---
 
@@ -102,8 +107,10 @@ Edit [config.py](config.py) to change defaults:
 * `YOUTUBE_PLAYER_CLIENTS`
 * `YOUTUBE_PO_TOKEN_WEB`
 * `YOUTUBE_PO_TOKEN_MWEB`
+* `YOUTUBE_PO_TOKEN_ANDROID`
 * `YOUTUBE_PO_TOKEN_IOS`
 * `COOKIES_FILE`
+* `COOKIES_FROM_BROWSER`
 * `ALLOW_DRM_CLIENTS`
 * `SOCKET_TIMEOUT`
 * `RETRIES`
@@ -126,6 +133,7 @@ Notes:
 * **Channels** support *all videos* or *recent N*.
 * **Subtitles** are optional (can slow downloads).
 * **Thumbnail embedding** adds cover art to files.
+* **Logs** can be cleared in the UI without reloading the page.
 
 ---
 
@@ -175,13 +183,20 @@ Response:
   "progress": 42,
   "speed": "1.2MiB/s",
   "eta": "00:12",
-  "current_action": "Downloading data (42%)"
+  "current_action": "Downloading data (42%)",
+  "playlist_total": 10,
+  "playlist_completed": 2,
+  "playlist_current": 3
 }
 ```
 
 ### POST /api/cancel
 
 Clears queued items and requests cancellation of the active download.
+
+### POST /api/clear_logs
+
+Clears the server-side activity log so the UI stays empty after clearing.
 
 ---
 
@@ -193,6 +208,7 @@ Clears queued items and requests cancellation of the active download.
 * **No JS runtime available**: Use `YOUTUBE_PLAYER_CLIENTS = ['web']` to avoid JS runtime dependency.
 * **PO token required**: Set `YOUTUBE_PO_TOKEN_WEB` (or mweb/ios) in [config.py](config.py) following the yt-dlp PO token guide.
 * **Age/region restricted**: Export browser cookies to a `cookies.txt` and set `COOKIES_FILE` in [config.py](config.py).
+* **Browser cookie errors**: Close the browser or switch to `COOKIES_FILE` if cookies are locked.
 * **Stalling downloads**: Lower `CONCURRENT_FRAGMENT_DOWNLOADS` and `HTTP_CHUNK_SIZE`, and increase `SOCKET_TIMEOUT`.
 * **Slow downloads**: Try a lower resolution or disable subtitles.
 * **Permission errors**: Choose a writable output folder.
@@ -203,9 +219,9 @@ Clears queued items and requests cancellation of the active download.
 
 The app features a modern, mobile-friendly UI with:
 
-* **Dark Mode** terminal logs for that developer feel.
+* **YouTube-inspired dark UI** with a bold accent palette.
 * **Dynamic progress bars** to keep you informed.
-* **Foldable logs** to see the technical details or hide them away.
+* **Live header status pill** for quick state checks.
 
 ---
 

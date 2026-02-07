@@ -41,11 +41,13 @@ class Config:
     ]
 
     # YouTube extractor settings
-    YOUTUBE_PLAYER_CLIENTS = ['web', 'mweb', 'android']  # Avoid DRM-prone clients by default
+    YOUTUBE_PLAYER_CLIENTS = []  # Empty uses yt-dlp defaults for best format availability
     YOUTUBE_PO_TOKEN_WEB = ''
     YOUTUBE_PO_TOKEN_MWEB = ''
+    YOUTUBE_PO_TOKEN_ANDROID = ''
     YOUTUBE_PO_TOKEN_IOS = ''
     COOKIES_FILE = ''  # Optional: path to cookies.txt for YouTube access
+    COOKIES_FROM_BROWSER = 'edge'  # Optional: 'chrome', 'edge', 'firefox'
     ALLOW_MISSING_PO_FORMATS = True  # Enable formats that may require PO token (can still 403)
     ALLOW_DRM_CLIENTS = False  # Set True to allow 'tv' client (may be DRM restricted)
     

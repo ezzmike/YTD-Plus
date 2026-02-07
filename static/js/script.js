@@ -4,6 +4,7 @@
 // DOM Elements (will be initialized after DOM loads)
 let downloadForm, downloadBtn, cancelBtn, previewBtn, videoPreview;
 let progressCard, logsDiv, clearLogsBtn, modeRadios, resolutionGroup;
+let statusPill;
 let channelOptionsGroup, downloadTypeRadios;
 
 // Status polling
@@ -26,6 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
     progressCard = document.getElementById('progressCard');
     logsDiv = document.getElementById('logs');
     clearLogsBtn = document.getElementById('clearLogsBtn');
+    statusPill = document.getElementById('statusPill');
     modeRadios = document.querySelectorAll('input[name="mode"]');
     resolutionGroup = document.getElementById('resolutionGroup');
     channelOptionsGroup = document.getElementById('channelOptionsGroup');
@@ -302,6 +304,25 @@ function updateStatus(status) {
     statusElement.textContent = capitalizeFirst(status.status);
     statusElement.className = 'value ' + status.status;
 
+    if (statusPill) {
+        const pillStatus = status.status || 'idle';
+        statusPill.textContent = capitalizeFirst(pillStatus);
+        statusPill.className = 'status-pill ' + pillStatus;
+    }
+
+    // Update playlist progress if available
+    const playlistTotal = parseInt(status.playlist_total || 0, 10);
+    const playlistCompleted = parseInt(status.playlist_completed || 0, 10);
+    const playlistCurrent = parseInt(status.playlist_current || 0, 10);
+    const playlistRow = document.getElementById('playlistProgressRow');
+    if (playlistTotal > 1 && playlistRow) {
+        const currentHint = playlistCurrent > 0 ? ` • current ${playlistCurrent}` : '';
+        document.getElementById('playlistProgress').textContent = `${playlistCompleted}/${playlistTotal}${currentHint}`;
+        playlistRow.style.display = 'flex';
+    } else if (playlistRow) {
+        playlistRow.style.display = 'none';
+    }
+
     // Update current action if available
     if (status.current_action) {
         let actionText = status.current_action;
@@ -322,7 +343,11 @@ function updateStatus(status) {
 
     // Update speed and ETA
     document.getElementById('speed').textContent = status.speed || '-';
-    document.getElementById('eta').textContent = status.eta || '-';
+    if (status.status === 'completed' || status.status === 'error' || status.status === 'cancelled') {
+        document.getElementById('eta').textContent = '';
+    } else {
+        document.getElementById('eta').textContent = status.eta || '-';
+    }
 
     // Update title if available
     if (status.title) {
@@ -393,6 +418,7 @@ function addLog(message, type = 'info') {
 // Clear logs
 function clearLogs() {
     logsDiv.innerHTML = '<div class="log-entry">Logs cleared.</div>';
+    fetch('/api/clear_logs', { method: 'POST' }).catch(() => {});
 }
 
 // Show notification (simple alert for now)
